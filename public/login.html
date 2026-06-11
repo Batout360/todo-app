@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Task Master</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+    <div class="container auth-container animate-in">
+        <h1 id="authTitle">Login</h1>
+        <form id="authForm">
+            <input type="text" id="username" placeholder="Username" required autocomplete="username">
+            <input type="password" id="password" placeholder="Password" required autocomplete="current-password">
+            <button type="submit" id="authSubmit">Login</button>
+        </form>
+        <p id="authToggle">Don't have an account? <a href="#" id="toggleLink">Register</a></p>
+        <p id="errorMsg" class="error"></p>
+    </div>
+
+    <script>
+        const authForm = document.getElementById('authForm');
+        const authTitle = document.getElementById('authTitle');
+        const authSubmit = document.getElementById('authSubmit');
+        const toggleLink = document.getElementById('toggleLink');
+        const errorMsg = document.getElementById('errorMsg');
+        
+        let isLogin = true;
+
+        toggleLink.onclick = (e) => {
+            e.preventDefault();
+            isLogin = !isLogin;
+            authTitle.innerText = isLogin ? 'Login' : 'Register';
+            authSubmit.innerText = isLogin ? 'Login' : 'Register';
+            toggleLink.innerText = isLogin ? 'Register' : 'Login';
+            document.getElementById('authToggle').childNodes[0].textContent = isLogin ? "Don't have an account? " : "Already have an account? ";
+            errorMsg.innerText = '';
+        };
+
+        authForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+
+            errorMsg.innerText = 'Connecting...';
+            errorMsg.style.color = 'var(--text-muted)';
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    if (isLogin) {
+                        localStorage.setItem('token', data.token);
+                        localStorage.setItem('username', data.username);
+                        window.location.href = '/';
+                    } else {
+                        isLogin = true;
+                        authTitle.innerText = 'Login';
+                        authSubmit.innerText = 'Login';
+                        toggleLink.innerText = 'Register';
+                        document.getElementById('authToggle').childNodes[0].textContent = "Don't have an account? ";
+                        errorMsg.innerText = 'Registration successful! Please login.';
+                        errorMsg.style.color = 'var(--success)';
+                        document.getElementById('password').value = '';
+                    }
+                } else {
+                    errorMsg.innerText = data.error || 'Error: ' + response.status;
+                    errorMsg.style.color = 'var(--danger)';
+                }
+            } catch (err) {
+                console.error('Auth Error:', err);
+                errorMsg.innerText = 'Connection failed. Is the server running?';
+                errorMsg.style.color = 'var(--danger)';
+            }
+        };
+
+        // Check for theme
+        if (localStorage.getItem('theme') === 'dark') {
+            document.body.classList.add('dark-theme');
+        }
+    </script>
+</body>
+</html>
