@@ -6,25 +6,42 @@ dotenv.config();
 
 const dbUrl = process.env.DATABASE_URL;
 
+if (dbUrl) {
+    console.log('Using DATABASE_URL for connection');
+} else {
+    console.log(`Connecting to database with:
+        Host: ${process.env.DB_HOST || 'dpg-d8lcmhq8qa3s73a2adig-a'}
+        Port: ${process.env.DB_PORT || '5432'}
+        User: ${process.env.DB_USER || 'todo_app_iw5f_user'}
+        DB: ${process.env.DB_NAME || 'todo_app_iw5f'}
+        Dialect: ${process.env.DB_DIALECT || 'postgres'}
+    `);
+}
+
 const sequelize = dbUrl 
     ? new Sequelize(dbUrl, {
-        dialect: (process.env.DB_DIALECT as any) || 'mysql',
+        dialect: (process.env.DB_DIALECT as any) || 'postgres',
         logging: false,
-        dialectOptions: (process.env.DB_DIALECT === 'mysql' && !dbUrl.includes('localhost')) ? {
+        dialectOptions: {
             ssl: {
                 rejectUnauthorized: false
             }
-        } : {}
+        }
     })
     : new Sequelize(
-        process.env.DB_NAME || 'todo_app',
-        process.env.DB_USER || 'root',
-        process.env.DB_PASSWORD || '',
+        process.env.DB_NAME || 'todo_app_iw5f',
+        process.env.DB_USER || 'todo_app_iw5f_user',
+        process.env.DB_PASSWORD || '0pOkuNNZbRIlUNumJqExg0CCkMRqp7XQ',
         {
-            host: process.env.DB_HOST || 'localhost',
-            port: parseInt(process.env.DB_PORT || '3306'),
-            dialect: (process.env.DB_DIALECT as any) || 'mysql',
+            host: process.env.DB_HOST || 'dpg-d8lcmhq8qa3s73a2adig-a',
+            port: parseInt(process.env.DB_PORT || '5432'),
+            dialect: (process.env.DB_DIALECT as any) || 'postgres',
             logging: false,
+            dialectOptions: {
+                ssl: {
+                    rejectUnauthorized: false
+                }
+            }
         }
     );
 
