@@ -4,16 +4,29 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const sequelize = new Sequelize(
-    process.env.DB_NAME || 'todo_app',
-    process.env.DB_USER || 'root',
-    process.env.DB_PASSWORD || '',
-    {
-        host: process.env.DB_HOST || 'localhost',
-        dialect: 'mysql',
+const dbUrl = process.env.DATABASE_URL;
+
+const sequelize = dbUrl 
+    ? new Sequelize(dbUrl, {
+        dialect: (process.env.DB_DIALECT as any) || 'mysql',
         logging: false,
-    }
-);
+        dialectOptions: (process.env.DB_DIALECT === 'mysql' && !dbUrl.includes('localhost')) ? {
+            ssl: {
+                rejectUnauthorized: false
+            }
+        } : {}
+    })
+    : new Sequelize(
+        process.env.DB_NAME || 'todo_app',
+        process.env.DB_USER || 'root',
+        process.env.DB_PASSWORD || '',
+        {
+            host: process.env.DB_HOST || 'localhost',
+            port: parseInt(process.env.DB_PORT || '3306'),
+            dialect: (process.env.DB_DIALECT as any) || 'mysql',
+            logging: false,
+        }
+    );
 
 export class User extends Model {
     declare id: number;
@@ -83,7 +96,7 @@ Task.belongsTo(User, { foreignKey: 'userId' });
 export const syncDatabase = async () => {
     try {
         await sequelize.authenticate();
-        console.log('Connection to MySQL has been established successfully.');
+        console.log('Connection to database has been established successfully.');
         await sequelize.sync();
         console.log('Database synchronized.');
     } catch (error) {

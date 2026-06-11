@@ -13,6 +13,11 @@ const SECRET_KEY = process.env.JWT_SECRET || 'your-very-secret-key';
 app.use(express.json());
 app.use(express.static('public'));
 
+// --- Healthcheck ---
+app.get('/health', (req: Request, res: Response) => {
+    res.status(200).json({ status: 'ok' });
+});
+
 // --- Auth Middleware ---
 const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers['authorization'];
