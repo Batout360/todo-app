@@ -14,21 +14,9 @@ A simple, modern Todo application built with Node.js, Express, and TypeScript.
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript
 
 ## Setup & Run
+It has been set up to Run Locally and to be run on Render 
 
-### Prerequisites
-- Node.js (v18+ recommended)
-- npm
-
-### Installation
-```bash
-npm install
-```
-
-### Development
-Start the server with auto-reload:
-```bash
-npm run dev
-```
+link For Webaccess-https://todo-app-jxre.onrender.com
 
 ### Production
 Build and start the server:
