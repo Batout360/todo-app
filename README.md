@@ -1,22 +1,36 @@
 # Todo App
 
-A simple, modern Todo application built with Node.js, Express, and TypeScript.
+A modern, feature-rich Todo application built with Node.js, Express, Sequelize, and TypeScript.
 
 ## Features
-- Add tasks
-- Mark tasks as complete/incomplete
-- Delete tasks
-- In-memory storage (resets on server restart)
-- Modern, responsive UI
+- **Task Management**: Add, toggle, and delete tasks.
+- **Privacy**: Tasks can be private or public.
+- **Social**: Search users, send/accept friend requests, and view friends' public tasks.
+- **XP & Leveling**: Earn 100 XP for each completed task and level up.
+- **Profiles**: Personalized profiles with avatars (supported by Vercel Blob).
+- **Modern UI**: Responsive design with dark/light theme support.
 
 ## Tech Stack
-- **Backend**: Node.js, Express, TypeScript (ES Modules)
-- **Frontend**: HTML5, CSS3, Vanilla JavaScript
+- **Backend**: Node.js, Express, Sequelize (SQL), TypeScript.
+- **Database**: Supports MySQL, PostgreSQL, or any SQL DB via Sequelize.
+- **Storage**: Vercel Blob for avatar storage.
+- **Frontend**: HTML5, CSS3, Vanilla JavaScript.
 
 ## Setup & Run
-It has been set up to Run Locally and to be run on Render 
 
-link For Webaccess-https://todo-app-jxre.onrender.com
+### Environment Variables
+Create a `.env` file in the root with:
+```env
+DATABASE_URL=your_sql_db_url
+JWT_SECRET=your_jwt_secret
+BLOB_READ_WRITE_TOKEN=your_vercel_blob_token
+```
+
+### Development
+```bash
+npm install
+npm run dev
+```
 
 ### Production
 Build and start the server:
@@ -25,8 +39,7 @@ npm run build
 npm start
 ```
 
-## API Endpoints
-- `GET /api/tasks`: Get all tasks.
-- `POST /api/tasks`: Add a new task (JSON body: `{ "text": "Task name" }`).
-- `PATCH /api/tasks/:id`: Toggle task completion.
-- `DELETE /api/tasks/:id`: Delete a task.
+### Database Check
+```bash
+npm run check-db
+```

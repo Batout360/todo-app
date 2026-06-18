@@ -32,3 +32,19 @@ if (process.env.NODE_ENV === "development") {
 // separate module, the client can be shared across functions.
 
 export default client;
+
+/**
+ * Get a connected MongoClient instance.
+ *
+ * This helper ensures the underlying `MongoClient` is only connected once per process.
+ * It works for both development (global caching) and production scenarios.
+ */
+// Connection helper ensuring a single connect per process.
+let _connectPromise: Promise<MongoClient> | null = null;
+export async function getConnectedClient(): Promise<MongoClient> {
+  if (!_connectPromise) {
+    _connectPromise = client.connect();
+  }
+  return await _connectPromise;
+}
+

@@ -42,5 +42,16 @@
     "skipLibCheck": true,
 
     "esModuleInterop": true,
-  }
+  },
+  "include": [
+    "api/**/*.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "check-db-connection.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "my-mongodb-app",
+    "A TodoWebsite using node"
+  ]
 }

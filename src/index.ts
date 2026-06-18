@@ -4,15 +4,53 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { syncDatabase, User, Task, Friendship } from './db';
 import { Op } from 'sequelize';
+import { put, get } from '@vercel/blob';
+import { Readable } from 'stream';
+import crypto from 'crypto';
+import path from 'path';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 const SECRET_KEY = process.env.JWT_SECRET || 'your-very-secret-key';
+const BLOB_WEBHOOK_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAMuzyERkoZGQ8wnpthQtEveB4DrLcF/O8xfTJEHG20Ds=
+-----END PUBLIC KEY-----`;
 
 app.use(express.json());
-app.use(express.static('public'));
+
+// Serve static files from 'public' directory
+app.use(express.static(path.join(__dirname, '../public')));
+
+// --- Helper for Webhook Verification ---
+function verifyVercelSignature(body: string, signature: string): boolean {
+    try {
+        return crypto.verify(
+            null,
+            Buffer.from(body),
+            BLOB_WEBHOOK_PUBLIC_KEY,
+            Buffer.from(signature, 'base64')
+        );
+    } catch (err) {
+        console.error('Signature verification error:', err);
+        return false;
+    }
+}
+
+// --- Database Sync Middleware (for Serverless) ---
+let isSynced = false;
+app.use(async (req, res, next) => {
+    if (!isSynced) {
+        try {
+            await syncDatabase();
+            isSynced = true;
+        } catch (err) {
+            console.error('DB Sync Error:', err);
+        }
+    }
+    next();
+});
 
 // --- Helper for Leveling ---
 const calculateLevel = (xp: number) => Math.floor(xp / 500) + 1;
@@ -36,27 +74,119 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
     });
 };
 
+// --- Avatar View Route (Proxy) ---
+app.get('/api/avatar/view', async (req: Request, res: Response) => {
+    const pathname = req.query.pathname as string;
+    if (!pathname) {
+        return res.status(400).json({ error: 'Missing pathname' });
+    }
+
+    try {
+        const result = await get(pathname, { access: 'private' });
+        
+        if (!result || result.statusCode !== 200) {
+            return res.status(result?.statusCode || 404).send('Not found');
+        }
+
+        const contentType = result.blob.contentType || 'application/octet-stream';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        
+        if (result.stream) {
+            const nodeStream = Readable.fromWeb(result.stream as any);
+            nodeStream.pipe(res);
+        } else {
+            res.status(404).send('No content available');
+        }
+
+    } catch (err) {
+        console.error('Error fetching blob:', err);
+        res.status(404).send('Not found');
+    }
+});
+
+// --- Vercel Blob Webhook Route ---
+app.post('/api/blob/webhook', express.text({ type: 'application/json' }), async (req: Request, res: Response) => {
+    const signature = req.headers['x-vercel-signature'] as string;
+    const rawBody = req.body as string;
+
+    if (!signature || !verifyVercelSignature(rawBody, signature)) {
+        console.error('Webhook verification failed');
+        return res.status(401).send('Unauthorized');
+    }
+
+    try {
+        const event = JSON.parse(rawBody);
+        if (event.type === 'blob.created') {
+            const pathname = event.payload.blob.pathname;
+            const match = pathname.match(/avatars\/(\d+)-/);
+            const userId = match ? match[1] : null;
+
+            if (userId) {
+                const user = await User.findByPk(userId);
+                if (user) {
+                    user.avatarUrl = `/api/avatar/view?pathname=${pathname}`;
+                    await user.save();
+                    console.log(`Database updated via webhook for user ${userId}`);
+                }
+            }
+        }
+
+        res.status(200).send('OK');
+    } catch (err) {
+        console.error('Error processing webhook:', err);
+        res.status(500).send('Internal server error');
+    }
+});
+
+// --- Avatar Upload Route ---
+app.post('/api/avatar/upload', authenticateToken, express.raw({ type: 'image/*', limit: '4.5mb' }), async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const filename = req.query.filename as string;
+
+    if (!filename || !req.body) {
+        return res.status(400).json({ error: 'Filename and image data required' });
+    }
+
+    try {
+        const blob = await put(`avatars/${userId}-${filename}`, req.body, {
+            access: 'private',
+            addRandomSuffix: true
+        });
+
+        const user = await User.findByPk(userId);
+        let avatarUrl = '';
+        if (user) {
+            avatarUrl = `/api/avatar/view?pathname=${blob.pathname}`;
+            user.avatarUrl = avatarUrl;
+            await user.save();
+        }
+
+        res.json({ ...blob, avatarUrl });
+    } catch (err) {
+        console.error('Upload error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // --- Auth Routes ---
 app.post('/api/auth/register', async (req: Request, res: Response) => {
     let { username, password } = req.body;
     if (typeof username === 'string') username = username.trim();
     
-    console.log(`Register attempt for: "${username}"`);
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
     
     try {
         const existingUser = await User.findOne({ where: { username } });
         if (existingUser) {
-            console.log(`Register failed: User "${username}" already exists`);
             return res.status(400).json({ error: 'User already exists' });
         }
 
         const passwordHash = await bcrypt.hash(password, 10);
         await User.create({ username, passwordHash });
-        console.log(`Register success: User "${username}" created`);
         res.status(201).json({ message: 'User created' });
     } catch (err) {
-        console.error(`Register error for "${username}":`, err);
+        console.error(`Register error:`, err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -65,25 +195,21 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     let { username, password } = req.body;
     if (typeof username === 'string') username = username.trim();
 
-    console.log(`Login attempt for: "${username}"`);
     try {
         const user = await User.findOne({ where: { username } });
         if (!user) {
-            console.log(`Login failed: User "${username}" not found`);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         const isMatch = await bcrypt.compare(password, user.passwordHash);
         if (!isMatch) {
-            console.log(`Login failed: Password mismatch for "${username}"`);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        console.log(`Login success: "${username}"`);
         const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1h' });
         res.json({ token, username: user.username });
     } catch (err) {
-        console.error(`Login error for "${username}":`, err);
+        console.error(`Login error:`, err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -95,12 +221,13 @@ app.get('/api/profile', authenticateToken, async (req: Request, res: Response) =
         const user = await User.findByPk(userId);
         if (!user) return res.status(404).json({ error: 'User not found' });
         
-        const friendCount = await Friendship.count({ where: { userId } });
+        const friendCount = await Friendship.count({ where: { [Op.or]: [{ userId }, { friendId: userId }], status: 'accepted' } });
         
         res.json({
             username: user.username,
             xp: user.xp,
             level: user.level,
+            avatarUrl: user.avatarUrl,
             friendCount
         });
     } catch (err) {
@@ -110,7 +237,6 @@ app.get('/api/profile', authenticateToken, async (req: Request, res: Response) =
 
 // --- Friends Routes ---
 
-// Search users
 app.get('/api/users/search', authenticateToken, async (req: Request, res: Response) => {
     const { q } = req.query;
     const currentUserId = (req as any).user.id;
@@ -123,7 +249,7 @@ app.get('/api/users/search', authenticateToken, async (req: Request, res: Respon
                 username: { [Op.like]: `%${q}%` },
                 id: { [Op.ne]: currentUserId }
             },
-            attributes: ['id', 'username', 'level'],
+            attributes: ['id', 'username', 'level', 'avatarUrl'],
             limit: 10
         });
         res.json(users);
@@ -132,7 +258,6 @@ app.get('/api/users/search', authenticateToken, async (req: Request, res: Respon
     }
 });
 
-// Add friend (send request)
 app.post('/api/friends/add', authenticateToken, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const { friendId } = req.body;
@@ -162,7 +287,6 @@ app.post('/api/friends/add', authenticateToken, async (req: Request, res: Respon
     }
 });
 
-// List accepted friends
 app.get('/api/friends', authenticateToken, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     try {
@@ -176,7 +300,7 @@ app.get('/api/friends', authenticateToken, async (req: Request, res: Response) =
         const friendIds = friendships.map(f => f.userId === userId ? f.friendId : f.userId);
         const friends = await User.findAll({
             where: { id: friendIds },
-            attributes: ['id', 'username', 'level', 'xp']
+            attributes: ['id', 'username', 'level', 'xp', 'avatarUrl']
         });
         
         res.json(friends);
@@ -185,7 +309,6 @@ app.get('/api/friends', authenticateToken, async (req: Request, res: Response) =
     }
 });
 
-// List pending requests (incoming)
 app.get('/api/friends/pending', authenticateToken, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     try {
@@ -196,7 +319,7 @@ app.get('/api/friends/pending', authenticateToken, async (req: Request, res: Res
         const requesterIds = pending.map(p => p.userId);
         const users = await User.findAll({
             where: { id: requesterIds },
-            attributes: ['id', 'username', 'level']
+            attributes: ['id', 'username', 'level', 'avatarUrl']
         });
         
         res.json(users);
@@ -205,7 +328,6 @@ app.get('/api/friends/pending', authenticateToken, async (req: Request, res: Res
     }
 });
 
-// Accept friend request
 app.post('/api/friends/accept', authenticateToken, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const { friendId } = req.body;
@@ -228,13 +350,11 @@ app.post('/api/friends/accept', authenticateToken, async (req: Request, res: Res
     }
 });
 
-// Get friend tasks
 app.get('/api/friends/:id/tasks', authenticateToken, async (req: Request, res: Response) => {
     const friendId = parseInt(req.params.id as string);
     const userId = (req as any).user.id;
 
     try {
-        // Verify friendship
         const isFriend = await Friendship.findOne({ 
             where: { 
                 [Op.or]: [
@@ -257,7 +377,6 @@ app.get('/api/friends/:id/tasks', authenticateToken, async (req: Request, res: R
 
 // --- Task Routes ---
 
-// Get my tasks
 app.get('/api/tasks', authenticateToken, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     try {
@@ -268,17 +387,17 @@ app.get('/api/tasks', authenticateToken, async (req: Request, res: Response) => 
     }
 });
 
-// Get public tasks
 app.get('/api/tasks/public', async (req: Request, res: Response) => {
     try {
         const publicTasks = await Task.findAll({
             where: { isPublic: true },
-            include: [{ model: User, attributes: ['username'] }]
+            include: [{ model: User, attributes: ['username', 'avatarUrl'] }]
         });
         
         const formattedTasks = publicTasks.map((t: any) => ({
             ...t.toJSON(),
-            username: t.user?.username || 'Unknown'
+            username: t.user?.username || 'Unknown',
+            avatarUrl: t.user?.avatarUrl
         }));
         
         res.json(formattedTasks);
@@ -287,7 +406,6 @@ app.get('/api/tasks/public', async (req: Request, res: Response) => {
     }
 });
 
-// Add a new task
 app.post('/api/tasks', authenticateToken, async (req: Request, res: Response) => {
     const { text, isPublic } = req.body;
     const userId = (req as any).user.id;
@@ -307,7 +425,6 @@ app.post('/api/tasks', authenticateToken, async (req: Request, res: Response) =>
     }
 });
 
-// Toggle task completion
 app.patch('/api/tasks/:id', authenticateToken, async (req: Request, res: Response) => {
     const id = parseInt(req.params.id as string);
     const userId = (req as any).user.id;
@@ -320,7 +437,6 @@ app.patch('/api/tasks/:id', authenticateToken, async (req: Request, res: Respons
         task.completed = !task.completed;
         await task.save();
 
-        // Award XP if completed
         if (!wasCompleted && task.completed) {
             const user = await User.findByPk(userId);
             if (user) {
@@ -329,7 +445,6 @@ app.patch('/api/tasks/:id', authenticateToken, async (req: Request, res: Respons
                 await user.save();
             }
         } else if (wasCompleted && !task.completed) {
-            // Optional: Remove XP if uncompleted
             const user = await User.findByPk(userId);
             if (user) {
                 user.xp = Math.max(0, user.xp - 100);
@@ -344,7 +459,6 @@ app.patch('/api/tasks/:id', authenticateToken, async (req: Request, res: Respons
     }
 });
 
-// Delete a task
 app.delete('/api/tasks/:id', authenticateToken, async (req: Request, res: Response) => {
     const id = parseInt(req.params.id as string);
     const userId = (req as any).user.id;
@@ -360,11 +474,15 @@ app.delete('/api/tasks/:id', authenticateToken, async (req: Request, res: Respon
     }
 });
 
-// Initialize DB and start server
-syncDatabase().then(() => {
-    app.listen(port, () => {
-        console.log(`Server running at http://localhost:${port}`);
+// Start server if not running as a Vercel function
+if (require.main === module || process.env.NODE_ENV !== 'production') {
+    syncDatabase().then(() => {
+        app.listen(port, () => {
+            console.log(`Server running at http://localhost:${port}`);
+        });
+    }).catch(err => {
+        console.error('Failed to sync database:', err);
     });
-}).catch(err => {
-    console.error('Failed to sync database:', err);
-});
+}
+
+export default app;
