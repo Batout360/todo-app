@@ -6,13 +6,32 @@ import { syncDatabase, User, Task, Friendship } from '../src/db';
 import { Op } from 'sequelize';
 import { put, get } from '@vercel/blob';
 import { Readable } from 'stream';
+import crypto from 'crypto';
 
 dotenv.config();
 
 const app = express();
 const SECRET_KEY = process.env.JWT_SECRET || 'your-very-secret-key';
+const BLOB_WEBHOOK_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAMuzyERkoZGQ8wnpthQtEveB4DrLcF/O8xfTJEHG20Ds=
+-----END PUBLIC KEY-----`;
 
 app.use(express.json());
+
+// --- Helper for Webhook Verification ---
+function verifyVercelSignature(body: string, signature: string): boolean {
+    try {
+        return crypto.verify(
+            null,
+            Buffer.from(body),
+            BLOB_WEBHOOK_PUBLIC_KEY,
+            Buffer.from(signature, 'base64')
+        );
+    } catch (err) {
+        console.error('Signature verification error:', err);
+        return false;
+    }
+}
 
 // --- Database Sync Middleware ---
 let isSynced = false;
@@ -83,6 +102,41 @@ app.get('/api/avatar/view', async (req: Request, res: Response) => {
     }
 });
 
+// --- Vercel Blob Webhook Route ---
+app.post('/api/blob/webhook', express.text({ type: 'application/json' }), async (req: Request, res: Response) => {
+    const signature = req.headers['x-vercel-signature'] as string;
+    const rawBody = req.body as string;
+
+    if (!signature || !verifyVercelSignature(rawBody, signature)) {
+        console.error('Webhook verification failed');
+        return res.status(401).send('Unauthorized');
+    }
+
+    try {
+        const event = JSON.parse(rawBody);
+        if (event.type === 'blob.created') {
+            const pathname = event.payload.blob.pathname;
+            // Extract userId from pathname: avatars/{userId}-{filename}
+            const match = pathname.match(/avatars\/(\d+)-/);
+            const userId = match ? match[1] : null;
+
+            if (userId) {
+                const user = await User.findByPk(userId);
+                if (user) {
+                    user.avatarUrl = `/api/avatar/view?pathname=${pathname}`;
+                    await user.save();
+                    console.log(`Database updated via webhook for user ${userId}`);
+                }
+            }
+        }
+
+        res.status(200).send('OK');
+    } catch (err) {
+        console.error('Error processing webhook:', err);
+        res.status(500).send('Internal server error');
+    }
+});
+
 // --- Avatar Upload Route ---
 app.post('/api/avatar/upload', authenticateToken, express.raw({ type: 'image/*', limit: '4.5mb' }), async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
@@ -93,14 +147,16 @@ app.post('/api/avatar/upload', authenticateToken, express.raw({ type: 'image/*',
     }
 
     try {
-        const blob = await put(filename, req.body, {
+        // Embed userId in pathname for the webhook to pick up
+        const blob = await put(`avatars/${userId}-${filename}`, req.body, {
             access: 'private',
+            addRandomSuffix: true
         });
 
         const user = await User.findByPk(userId);
         let avatarUrl = '';
         if (user) {
-            // Store the proxy URL
+            // Immediate update for better UX
             avatarUrl = `/api/avatar/view?pathname=${blob.pathname}`;
             user.avatarUrl = avatarUrl;
             await user.save();
