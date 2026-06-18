@@ -1,172 +1,68 @@
-import { Sequelize, DataTypes, Model } from 'sequelize';
-import bcrypt from 'bcryptjs';
+import { MongoClient, Db, ObjectId, Collection } from 'mongodb';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const dbUrl = process.env.DATABASE_URL;
+const uri = process.env.MONGODB_URI || "mongodb+srv://donbok:donbok@verceldb.qc3elli.mongodb.net/?appName=verceldb";
+const dbName = "todo_app";
 
-if (dbUrl) {
-    console.log('Using DATABASE_URL for connection');
-} else {
-    console.log(`Connecting to database with:
-        Host: ${process.env.DB_HOST || 'localhost'}
-        Port: ${process.env.DB_PORT || '3306'}
-        User: ${process.env.DB_USER || 'root'}
-        DB: ${process.env.DB_NAME || 'todo_app'}
-        Dialect: ${process.env.DB_DIALECT || 'mysql'}
-    `);
-}
+let client: MongoClient | null = null;
+let db: Db | null = null;
 
-const sequelize = dbUrl 
-    ? new Sequelize(dbUrl, {
-        dialect: (process.env.DB_DIALECT as any) || 'mysql',
-        logging: false,
-        dialectOptions: process.env.DB_DIALECT === 'postgres' ? {
-            ssl: {
-                rejectUnauthorized: false
-            }
-        } : {}
-    })
-    : new Sequelize(
-        process.env.DB_NAME || 'todo_app',
-        process.env.DB_USER || 'root',
-        process.env.DB_PASSWORD || '',
-        {
-            host: process.env.DB_HOST || 'localhost',
-            port: parseInt(process.env.DB_PORT || '3306'),
-            dialect: (process.env.DB_DIALECT as any) || 'mysql',
-            logging: false,
-        }
-    );
+export async function connectToDatabase(): Promise<Db> {
+    if (db) return db;
 
-export class User extends Model {
-    declare id: number;
-    declare username: string;
-    declare passwordHash: string;
-    declare xp: number;
-    declare level: number;
-    declare avatarUrl: string;
-}
-
-User.init({
-    id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-    },
-    username: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
-    },
-    passwordHash: {
-        type: DataTypes.STRING,
-        allowNull: false,
-    },
-    xp: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0,
-    },
-    level: {
-        type: DataTypes.INTEGER,
-        defaultValue: 1,
-    },
-    avatarUrl: {
-        type: DataTypes.STRING,
-        allowNull: true,
-    },
-}, {
-    sequelize,
-    modelName: 'user',
-});
-
-export class Task extends Model {
-    declare id: number;
-    declare userId: number;
-    declare text: string;
-    declare completed: boolean;
-    declare isPublic: boolean;
-}
-
-Task.init({
-    id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-    },
-    userId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-    },
-    text: {
-        type: DataTypes.STRING,
-        allowNull: false,
-    },
-    completed: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-    },
-    isPublic: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-    },
-}, {
-    sequelize,
-    modelName: 'task',
-});
-
-export class Friendship extends Model {
-    declare id: number;
-    declare userId: number;
-    declare friendId: number;
-    declare status: 'pending' | 'accepted';
-}
-
-Friendship.init({
-    id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-    },
-    userId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-    },
-    friendId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-    },
-    status: {
-        type: DataTypes.ENUM('pending', 'accepted'),
-        defaultValue: 'pending',
-    },
-}, {
-    sequelize,
-    modelName: 'friendship',
-});
-
-// Relationships
-User.hasMany(Task, { foreignKey: 'userId' });
-Task.belongsTo(User, { foreignKey: 'userId' });
-
-User.belongsToMany(User, { 
-    as: 'friends', 
-    through: Friendship, 
-    foreignKey: 'userId', 
-    otherKey: 'friendId' 
-});
-
-export const syncDatabase = async () => {
-    try {
-        await sequelize.authenticate();
-        console.log('Connection to database has been established successfully.');
-        await sequelize.sync({ alter: true });
-        console.log('Database synchronized.');
-    } catch (error) {
-        console.error('Unable to connect to the database:', error);
-        throw error;
+    if (!client) {
+        client = new MongoClient(uri);
+        await client.connect();
+        console.log('Connected to MongoDB');
     }
+
+    db = client.db(dbName);
+    
+    // Create indexes for performance/uniqueness
+    await db.collection('users').createIndex({ username: 1 }, { unique: true });
+    
+    return db;
+}
+
+// Interfaces for our documents
+export interface UserDoc {
+    _id?: ObjectId;
+    username: string;
+    passwordHash: string;
+    xp: number;
+    level: number;
+    avatarUrl?: string;
+}
+
+export interface TaskDoc {
+    _id?: ObjectId;
+    userId: ObjectId;
+    text: string;
+    completed: boolean;
+    isPublic: boolean;
+    createdAt: Date;
+}
+
+export interface FriendshipDoc {
+    _id?: ObjectId;
+    userId: ObjectId;
+    friendId: ObjectId;
+    status: 'pending' | 'accepted';
+}
+
+// Database helper object to mimic model access
+export const dbOps = {
+    users: () => db!.collection<UserDoc>('users'),
+    tasks: () => db!.collection<TaskDoc>('tasks'),
+    friendships: () => db!.collection<FriendshipDoc>('friendships'),
 };
 
-export default sequelize;
+// Legacy syncDatabase for backward compatibility in index.ts
+export const syncDatabase = async () => {
+    await connectToDatabase();
+    console.log('Database connection initialized.');
+};
+
+export default { connectToDatabase, dbOps, syncDatabase };
