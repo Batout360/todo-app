@@ -10,38 +10,33 @@ if (dbUrl) {
     console.log('Using DATABASE_URL for connection');
 } else {
     console.log(`Connecting to database with:
-        Host: ${process.env.DB_HOST || 'dpg-d8lcmhq8qa3s73a2adig-a'}
-        Port: ${process.env.DB_PORT || '5432'}
-        User: ${process.env.DB_USER || 'todo_app_iw5f_user'}
-        DB: ${process.env.DB_NAME || 'todo_app_iw5f'}
-        Dialect: ${process.env.DB_DIALECT || 'postgres'}
+        Host: ${process.env.DB_HOST || 'localhost'}
+        Port: ${process.env.DB_PORT || '3306'}
+        User: ${process.env.DB_USER || 'root'}
+        DB: ${process.env.DB_NAME || 'todo_app'}
+        Dialect: ${process.env.DB_DIALECT || 'mysql'}
     `);
 }
 
 const sequelize = dbUrl 
     ? new Sequelize(dbUrl, {
-        dialect: (process.env.DB_DIALECT as any) || 'postgres',
+        dialect: (process.env.DB_DIALECT as any) || 'mysql',
         logging: false,
-        dialectOptions: {
+        dialectOptions: process.env.DB_DIALECT === 'postgres' ? {
             ssl: {
                 rejectUnauthorized: false
             }
-        }
+        } : {}
     })
     : new Sequelize(
-        process.env.DB_NAME || 'todo_app_iw5f',
-        process.env.DB_USER || 'todo_app_iw5f_user',
-        process.env.DB_PASSWORD || '0pOkuNNZbRIlUNumJqExg0CCkMRqp7XQ',
+        process.env.DB_NAME || 'todo_app',
+        process.env.DB_USER || 'root',
+        process.env.DB_PASSWORD || '',
         {
-            host: process.env.DB_HOST || 'dpg-d8lcmhq8qa3s73a2adig-a',
-            port: parseInt(process.env.DB_PORT || '5432'),
-            dialect: (process.env.DB_DIALECT as any) || 'postgres',
+            host: process.env.DB_HOST || 'localhost',
+            port: parseInt(process.env.DB_PORT || '3306'),
+            dialect: (process.env.DB_DIALECT as any) || 'mysql',
             logging: false,
-            dialectOptions: {
-                ssl: {
-                    rejectUnauthorized: false
-                }
-            }
         }
     );
 
@@ -49,6 +44,8 @@ export class User extends Model {
     declare id: number;
     declare username: string;
     declare passwordHash: string;
+    declare xp: number;
+    declare level: number;
 }
 
 User.init({
@@ -65,6 +62,14 @@ User.init({
     passwordHash: {
         type: DataTypes.STRING,
         allowNull: false,
+    },
+    xp: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+    },
+    level: {
+        type: DataTypes.INTEGER,
+        defaultValue: 1,
     },
 }, {
     sequelize,
@@ -106,15 +111,52 @@ Task.init({
     modelName: 'task',
 });
 
+export class Friendship extends Model {
+    declare id: number;
+    declare userId: number;
+    declare friendId: number;
+    declare status: 'pending' | 'accepted';
+}
+
+Friendship.init({
+    id: {
+        type: DataTypes.INTEGER,
+        autoIncrement: true,
+        primaryKey: true,
+    },
+    userId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+    },
+    friendId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+    },
+    status: {
+        type: DataTypes.ENUM('pending', 'accepted'),
+        defaultValue: 'pending',
+    },
+}, {
+    sequelize,
+    modelName: 'friendship',
+});
+
 // Relationships
 User.hasMany(Task, { foreignKey: 'userId' });
 Task.belongsTo(User, { foreignKey: 'userId' });
+
+User.belongsToMany(User, { 
+    as: 'friends', 
+    through: Friendship, 
+    foreignKey: 'userId', 
+    otherKey: 'friendId' 
+});
 
 export const syncDatabase = async () => {
     try {
         await sequelize.authenticate();
         console.log('Connection to database has been established successfully.');
-        await sequelize.sync();
+        await sequelize.sync({ alter: true });
         console.log('Database synchronized.');
     } catch (error) {
         console.error('Unable to connect to the database:', error);

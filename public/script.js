@@ -14,8 +14,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeToggle = document.getElementById('themeToggle');
     const tabs = document.querySelectorAll('.tab');
     const inputContainer = document.getElementById('inputContainer');
+    
+    // Stats elements
+    const userLevel = document.getElementById('userLevel');
+    const xpFill = document.getElementById('xpFill');
+    const userXp = document.getElementById('userXp');
+
+    // Friends elements
+    const friendsContainer = document.getElementById('friendsContainer');
+    const friendSearch = document.getElementById('friendSearch');
+    const searchResults = document.getElementById('searchResults');
+    const friendsList = document.getElementById('friendsList');
+    const pendingRequests = document.getElementById('pendingRequests');
+    const requestsList = document.getElementById('requestsList');
 
     let currentTab = 'my';
+    let selectedFriendId = null;
     displayUsername.innerText = localStorage.getItem('username');
 
     // --- Theme Logic ---
@@ -35,24 +49,183 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = '/login.html';
     };
 
+    // --- Profile Logic ---
+    async function updateProfile() {
+        const response = await fetch('/api/profile', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            userLevel.innerText = `Lvl ${data.level}`;
+            userXp.innerText = `${data.xp} XP`;
+            const progress = (data.xp % 500) / 500 * 100;
+            xpFill.style.width = `${progress}%`;
+        }
+    }
+
     // --- Tab Logic ---
     tabs.forEach(tab => {
         tab.onclick = () => {
             tabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             currentTab = tab.dataset.tab;
+            selectedFriendId = null;
             
-            // Hide input container if on public feed
-            inputContainer.style.display = currentTab === 'public' ? 'none' : 'flex';
+            // UI Visibility
+            inputContainer.style.display = currentTab === 'my' ? 'flex' : 'none';
+            friendsContainer.style.display = currentTab === 'friends' ? 'flex' : 'none';
+            taskList.style.display = currentTab === 'friends' ? 'none' : 'block';
             
-            fetchTasks();
+            if (currentTab === 'friends') {
+                fetchFriends();
+                fetchPendingRequests();
+            } else {
+                fetchTasks();
+            }
         };
     });
 
+    // --- Friends Logic ---
+    async function searchUsers(query) {
+        if (!query) {
+            searchResults.style.display = 'none';
+            return;
+        }
+        const response = await fetch(`/api/users/search?q=${query}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const users = await response.json();
+        renderSearchResults(users);
+    }
+
+    function renderSearchResults(users) {
+        searchResults.innerHTML = '';
+        if (users.length === 0) {
+            searchResults.style.display = 'none';
+            return;
+        }
+        users.forEach(user => {
+            const div = document.createElement('div');
+            div.className = 'search-item';
+            div.innerHTML = `
+                <span>${user.username} (Lvl ${user.level})</span>
+                <button class="add-friend-btn" data-id="${user.id}">Add</button>
+            `;
+            div.querySelector('.add-friend-btn').onclick = (e) => {
+                e.stopPropagation();
+                addFriend(user.id);
+            };
+            searchResults.appendChild(div);
+        });
+        searchResults.style.display = 'block';
+    }
+
+    async function addFriend(friendId) {
+        const response = await fetch('/api/friends/add', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ friendId })
+        });
+        if (response.ok) {
+            friendSearch.value = '';
+            searchResults.style.display = 'none';
+            alert('Friend request sent!');
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to send request');
+        }
+    }
+
+    async function fetchPendingRequests() {
+        const response = await fetch('/api/friends/pending', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const requests = await response.json();
+        renderPendingRequests(requests);
+    }
+
+    function renderPendingRequests(requests) {
+        if (requests.length === 0) {
+            pendingRequests.style.display = 'none';
+            return;
+        }
+        pendingRequests.style.display = 'block';
+        requestsList.innerHTML = '';
+        requests.forEach(user => {
+            const div = document.createElement('div');
+            div.className = 'request-item';
+            div.innerHTML = `
+                <span>${user.username} (Lvl ${user.level})</span>
+                <button class="accept-btn" data-id="${user.id}">Accept</button>
+            `;
+            div.querySelector('.accept-btn').onclick = () => acceptFriend(user.id);
+            requestsList.appendChild(div);
+        });
+    }
+
+    async function acceptFriend(friendId) {
+        const response = await fetch('/api/friends/accept', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ friendId })
+        });
+        if (response.ok) {
+            fetchFriends();
+            fetchPendingRequests();
+            updateProfile();
+        }
+    }
+
+    async function fetchFriends() {
+        const response = await fetch('/api/friends', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const friends = await response.json();
+        renderFriends(friends);
+    }
+
+    function renderFriends(friends) {
+        friendsList.innerHTML = friends.length ? '' : '<p style="text-align:center; color:var(--text-muted); margin-top:1rem">No friends yet. Search above!</p>';
+        friends.forEach(friend => {
+            const div = document.createElement('div');
+            div.className = 'friend-card animate-in';
+            div.innerHTML = `
+                <div class="friend-info">
+                    <span class="friend-name">${friend.username}</span>
+                    <span class="friend-lvl">Level ${friend.level} • ${friend.xp} XP</span>
+                </div>
+                <small>Click to view tasks</small>
+            `;
+            div.onclick = () => viewFriendTasks(friend);
+            friendsList.appendChild(div);
+        });
+    }
+
+    function viewFriendTasks(friend) {
+        selectedFriendId = friend.id;
+        currentTab = 'friend-tasks';
+        friendsContainer.style.display = 'none';
+        taskList.style.display = 'block';
+        fetchTasks(friend.id, friend.username);
+    }
+
     // --- API Calls ---
-    async function fetchTasks() {
-        const endpoint = currentTab === 'my' ? '/api/tasks' : '/api/tasks/public';
-        const headers = currentTab === 'my' ? { 'Authorization': `Bearer ${token}` } : {};
+    async function fetchTasks(friendId = null, friendName = '') {
+        let endpoint = '';
+        let headers = { 'Authorization': `Bearer ${token}` };
+
+        if (friendId) {
+            endpoint = `/api/friends/${friendId}/tasks`;
+        } else {
+            endpoint = currentTab === 'my' ? '/api/tasks' : '/api/tasks/public';
+            if (currentTab === 'public') headers = {};
+        }
 
         const response = await fetch(endpoint, { headers });
         if (response.status === 401 || response.status === 403) {
@@ -60,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const tasks = await response.json();
-        renderTasks(tasks);
+        renderTasks(tasks, friendName);
     }
 
     async function addTask() {
@@ -90,7 +263,10 @@ document.addEventListener('DOMContentLoaded', () => {
             method: 'PATCH',
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (response.ok) fetchTasks();
+        if (response.ok) {
+            fetchTasks();
+            updateProfile();
+        }
     }
 
     async function deleteTask(id, element) {
@@ -104,8 +280,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderTasks(tasks) {
+    function renderTasks(tasks, friendName = '') {
         taskList.innerHTML = '';
+        if (friendName) {
+            const header = document.createElement('div');
+            header.style.marginBottom = '1rem';
+            header.innerHTML = `<button class="tab" id="backToFriends">← Back to Friends</button> <h3 style="display:inline; margin-left:1rem">${friendName}'s Public Tasks</h3>`;
+            header.querySelector('#backToFriends').onclick = () => {
+                currentTab = 'friends';
+                friendsContainer.style.display = 'flex';
+                taskList.style.display = 'none';
+                fetchFriends();
+            };
+            taskList.appendChild(header);
+        }
+
+        if (tasks.length === 0) {
+            taskList.innerHTML += '<p style="text-align:center; color:var(--text-muted); margin-top:2rem;">No tasks found.</p>';
+            return;
+        }
+
         tasks.forEach((task, index) => {
             const li = document.createElement('li');
             li.className = `task-item animate-in ${task.completed ? 'completed' : ''}`;
@@ -118,7 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="checkbox"></div>
                     <div class="task-meta">
                         <span>${task.text}</span>
-                        ${task.isPublic ? `<small>By: ${task.username || 'You'}</small>` : ''}
+                        ${task.isPublic && !isOwner && !friendName ? `<small>By: ${task.username || 'Unknown'}</small>` : ''}
                     </div>
                 </div>
                 ${isOwner ? `
@@ -146,5 +340,13 @@ document.addEventListener('DOMContentLoaded', () => {
     addBtn.onclick = addTask;
     taskInput.onkeypress = (e) => { if (e.key === 'Enter') addTask(); };
 
+    friendSearch.oninput = (e) => searchUsers(e.target.value);
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-box')) {
+            searchResults.style.display = 'none';
+        }
+    });
+
     fetchTasks();
+    updateProfile();
 });

@@ -11,6 +11,13 @@
         <header>
             <h1>Task Master</h1>
             <div class="user-info">
+                <div class="stats-bar">
+                    <span id="userLevel">Lvl 1</span>
+                    <div class="xp-progress">
+                        <div id="xpFill" style="width: 0%"></div>
+                    </div>
+                    <span id="userXp">0 XP</span>
+                </div>
                 <span id="displayUsername"></span>
                 <button id="themeToggle" class="icon-btn" title="Toggle Theme">
                     <svg viewBox="0 0 24 24" width="20" height="20">
@@ -41,6 +48,19 @@
         <div class="tabs">
             <button class="tab active" data-tab="my">My Tasks</button>
             <button class="tab" data-tab="public">Public Feed</button>
+            <button class="tab" data-tab="friends">Friends</button>
+        </div>
+
+        <div id="friendsContainer" style="display: none;">
+            <div class="search-box">
+                <input type="text" id="friendSearch" placeholder="Search users by name...">
+                <div id="searchResults" class="search-results"></div>
+            </div>
+            <div id="pendingRequests" class="pending-requests" style="display: none;">
+                <h4>Pending Requests</h4>
+                <div id="requestsList"></div>
+            </div>
+            <div id="friendsList" class="friends-list"></div>
         </div>
 
         <ul id="taskList"></ul>

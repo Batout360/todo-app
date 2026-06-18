@@ -2,17 +2,29 @@ import express, { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
-import { syncDatabase, User, Task, Friendship } from './db';
+import { syncDatabase, User, Task, Friendship } from '../src/db';
 import { Op } from 'sequelize';
 
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
 const SECRET_KEY = process.env.JWT_SECRET || 'your-very-secret-key';
 
 app.use(express.json());
-app.use(express.static('public'));
+
+// --- Database Sync Middleware ---
+let isSynced = false;
+app.use(async (req, res, next) => {
+    if (!isSynced) {
+        try {
+            await syncDatabase();
+            isSynced = true;
+        } catch (err) {
+            console.error('DB Sync Error:', err);
+        }
+    }
+    next();
+});
 
 // --- Helper for Leveling ---
 const calculateLevel = (xp: number) => Math.floor(xp / 500) + 1;
@@ -360,11 +372,16 @@ app.delete('/api/tasks/:id', authenticateToken, async (req: Request, res: Respon
     }
 });
 
-// Initialize DB and start server
-syncDatabase().then(() => {
-    app.listen(port, () => {
-        console.log(`Server running at http://localhost:${port}`);
+// Initialize DB (for local dev)
+if (process.env.NODE_ENV !== 'production') {
+    syncDatabase().then(() => {
+        const port = process.env.PORT || 3000;
+        app.listen(port, () => {
+            console.log(`Server running at http://localhost:${port}`);
+        });
+    }).catch(err => {
+        console.error('Failed to sync database:', err);
     });
-}).catch(err => {
-    console.error('Failed to sync database:', err);
-});
+}
+
+export default app;
