@@ -15,6 +15,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabs = document.querySelectorAll('.tab');
     const inputContainer = document.getElementById('inputContainer');
     
+    // Avatar elements
+    const userAvatar = document.getElementById('userAvatar');
+    const avatarInput = document.getElementById('avatarInput');
+
     // Stats elements
     const userLevel = document.getElementById('userLevel');
     const xpFill = document.getElementById('xpFill');
@@ -60,8 +64,39 @@ document.addEventListener('DOMContentLoaded', () => {
             userXp.innerText = `${data.xp} XP`;
             const progress = (data.xp % 500) / 500 * 100;
             xpFill.style.width = `${progress}%`;
+            
+            if (data.avatarUrl) {
+                userAvatar.src = data.avatarUrl;
+            } else {
+                userAvatar.src = `https://ui-avatars.com/api/?name=${data.username}&background=random`;
+            }
         }
     }
+
+    // --- Avatar Logic ---
+    userAvatar.onclick = () => avatarInput.click();
+
+    avatarInput.onchange = async () => {
+        const file = avatarInput.files[0];
+        if (!file) return;
+
+        const response = await fetch(`/api/avatar/upload?filename=${file.name}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': file.type
+            },
+            body: file
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            userAvatar.src = result.avatarUrl;
+            updateProfile();
+        } else {
+            alert('Upload failed');
+        }
+    };
 
     // --- Tab Logic ---
     tabs.forEach(tab => {
@@ -107,8 +142,12 @@ document.addEventListener('DOMContentLoaded', () => {
         users.forEach(user => {
             const div = document.createElement('div');
             div.className = 'search-item';
+            const avatarSrc = user.avatarUrl || `https://ui-avatars.com/api/?name=${user.username}&background=random`;
             div.innerHTML = `
-                <span>${user.username} (Lvl ${user.level})</span>
+                <div style="display:flex; align-items:center; gap:10px">
+                    <img src="${avatarSrc}" style="width:30px; height:30px; border-radius:50%">
+                    <span>${user.username} (Lvl ${user.level})</span>
+                </div>
                 <button class="add-friend-btn" data-id="${user.id}">Add</button>
             `;
             div.querySelector('.add-friend-btn').onclick = (e) => {
@@ -157,8 +196,12 @@ document.addEventListener('DOMContentLoaded', () => {
         requests.forEach(user => {
             const div = document.createElement('div');
             div.className = 'request-item';
+            const avatarSrc = user.avatarUrl || `https://ui-avatars.com/api/?name=${user.username}&background=random`;
             div.innerHTML = `
-                <span>${user.username} (Lvl ${user.level})</span>
+                <div style="display:flex; align-items:center; gap:10px">
+                    <img src="${avatarSrc}" style="width:30px; height:30px; border-radius:50%">
+                    <span>${user.username} (Lvl ${user.level})</span>
+                </div>
                 <button class="accept-btn" data-id="${user.id}">Accept</button>
             `;
             div.querySelector('.accept-btn').onclick = () => acceptFriend(user.id);
@@ -195,10 +238,14 @@ document.addEventListener('DOMContentLoaded', () => {
         friends.forEach(friend => {
             const div = document.createElement('div');
             div.className = 'friend-card animate-in';
+            const avatarSrc = friend.avatarUrl || `https://ui-avatars.com/api/?name=${friend.username}&background=random`;
             div.innerHTML = `
-                <div class="friend-info">
-                    <span class="friend-name">${friend.username}</span>
-                    <span class="friend-lvl">Level ${friend.level} • ${friend.xp} XP</span>
+                <div style="display:flex; align-items:center; gap:15px">
+                    <img src="${avatarSrc}" style="width:40px; height:40px; border-radius:50%">
+                    <div class="friend-info">
+                        <span class="friend-name">${friend.username}</span>
+                        <span class="friend-lvl">Level ${friend.level} • ${friend.xp} XP</span>
+                    </div>
                 </div>
                 <small>Click to view tasks</small>
             `;
@@ -306,13 +353,19 @@ document.addEventListener('DOMContentLoaded', () => {
             li.style.animationDelay = `${index * 0.05}s`;
             
             const isOwner = currentTab === 'my';
+            const showAuthor = task.isPublic && !isOwner && !friendName;
+            const avatarSrc = task.avatarUrl || `https://ui-avatars.com/api/?name=${task.username}&background=random`;
 
             li.innerHTML = `
                 <div class="task-info">
                     <div class="checkbox"></div>
                     <div class="task-meta">
                         <span>${task.text}</span>
-                        ${task.isPublic && !isOwner && !friendName ? `<small>By: ${task.username || 'Unknown'}</small>` : ''}
+                        ${showAuthor ? `
+                        <div style="display:flex; align-items:center; gap:5px; margin-top:5px">
+                            <img src="${avatarSrc}" style="width:16px; height:16px; border-radius:50%">
+                            <small>By: ${task.username || 'Unknown'}</small>
+                        </div>` : ''}
                     </div>
                 </div>
                 ${isOwner ? `

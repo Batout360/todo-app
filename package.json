@@ -15,6 +15,7 @@
   "author": "Donboklang Bryan Warjri",
   "license": "ISC",
   "dependencies": {
+    "@vercel/blob": "^2.4.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

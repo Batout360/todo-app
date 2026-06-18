@@ -46,6 +46,7 @@ export class User extends Model {
     declare passwordHash: string;
     declare xp: number;
     declare level: number;
+    declare avatarUrl: string;
 }
 
 User.init({
@@ -70,6 +71,10 @@ User.init({
     level: {
         type: DataTypes.INTEGER,
         defaultValue: 1,
+    },
+    avatarUrl: {
+        type: DataTypes.STRING,
+        allowNull: true,
     },
 }, {
     sequelize,
