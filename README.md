@@ -16,6 +16,9 @@ A modern, feature-rich Todo application built with Node.js, Express, Sequelize, 
 - **Storage**: Vercel Blob for avatar storage.
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript.
 
+## Deployed on Vercel and Database on MongoDB
+- link- https://todo-app-six-wine-99.vercel.app/
+
 ## Setup & Run
 
 ### Environment Variables
