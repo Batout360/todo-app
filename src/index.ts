@@ -70,9 +70,16 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
     });
 };
 
+// Helper to safely extract string from query params
+const getStringParam = (param: any): string | undefined => {
+    if (typeof param === 'string') return param;
+    if (Array.isArray(param)) return param[0];
+    return undefined;
+};
+
 // --- Avatar Routes ---
 app.get('/api/avatar/view', async (req: Request, res: Response) => {
-    const pathname = req.query.pathname as string;
+    const pathname = getStringParam(req.query.pathname);
     if (!pathname) return res.status(400).json({ error: 'Missing pathname' });
 
     try {
@@ -98,7 +105,7 @@ app.post('/api/blob/webhook', express.text({ type: 'application/json' }), async 
         if (event.type === 'blob.created') {
             const pathname = event.payload.blob.pathname;
             const match = pathname.match(/avatars\/([a-f\d]{24})-/);
-            const userId = match ? match[1] : null;
+            const userId = match?.[1] || null;
 
             if (userId) {
                 await dbOps.users().updateOne(
@@ -115,7 +122,7 @@ app.post('/api/blob/webhook', express.text({ type: 'application/json' }), async 
 
 app.post('/api/avatar/upload', authenticateToken, express.raw({ type: 'image/*', limit: '4.5mb' }), async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
-    const filename = req.query.filename as string;
+    const filename = getStringParam(req.query.filename);
 
     if (!filename || !req.body) return res.status(400).json({ error: 'Filename and image data required' });
 
@@ -200,13 +207,13 @@ app.get('/api/profile', authenticateToken, async (req: Request, res: Response) =
 
 // --- Friends Routes ---
 app.get('/api/users/search', authenticateToken, async (req: Request, res: Response) => {
-    const { q } = req.query;
+    const q = getStringParam(req.query.q);
     const currentUserId = (req as any).user.id;
     if (!q) return res.json([]);
 
     try {
         const users = await dbOps.users().find({
-            username: { $regex: q as string, $options: 'i' },
+            username: { $regex: q, $options: 'i' },
             _id: { $ne: currentUserId }
         }).limit(10).toArray();
 
@@ -220,6 +227,7 @@ app.post('/api/friends/add', authenticateToken, async (req: Request, res: Respon
     const userId = (req as any).user.id;
     const { friendId } = req.body;
     if (!friendId) return res.status(400).json({ error: 'Friend ID required' });
+    if (typeof friendId !== 'string') return res.status(400).json({ error: 'Invalid friend ID' });
     const friendObjectId = new ObjectId(friendId);
     if (userId.equals(friendObjectId)) return res.status(400).json({ error: 'Cannot add yourself' });
 
@@ -275,6 +283,7 @@ app.post('/api/friends/accept', authenticateToken, async (req: Request, res: Res
     const userId = (req as any).user.id;
     const { friendId } = req.body;
     if (!friendId) return res.status(400).json({ error: 'Friend ID required' });
+    if (typeof friendId !== 'string') return res.status(400).json({ error: 'Invalid friend ID' });
     const requesterId = new ObjectId(friendId);
 
     try {
@@ -290,6 +299,7 @@ app.post('/api/friends/accept', authenticateToken, async (req: Request, res: Res
 });
 
 app.get('/api/friends/:id/tasks', authenticateToken, async (req: Request, res: Response) => {
+    if (typeof req.params.id !== 'string') return res.status(400).json({ error: 'Invalid ID' });
     const friendId = new ObjectId(req.params.id);
     const userId = (req as any).user.id;
 
@@ -361,6 +371,7 @@ app.post('/api/tasks', authenticateToken, async (req: Request, res: Response) =>
 });
 
 app.patch('/api/tasks/:id', authenticateToken, async (req: Request, res: Response) => {
+    if (typeof req.params.id !== 'string') return res.status(400).json({ error: 'Invalid ID' });
     const taskId = new ObjectId(req.params.id);
     const userId = (req as any).user.id;
     
@@ -386,6 +397,7 @@ app.patch('/api/tasks/:id', authenticateToken, async (req: Request, res: Respons
 });
 
 app.delete('/api/tasks/:id', authenticateToken, async (req: Request, res: Response) => {
+    if (typeof req.params.id !== 'string') return res.status(400).json({ error: 'Invalid ID' });
     const taskId = new ObjectId(req.params.id);
     const userId = (req as any).user.id;
     
